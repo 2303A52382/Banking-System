@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Simple Bank System — Savings & Current</title>
+  <style>
+    :root{--bg:#f6f8fa;--card:#fff;--accent:#0b5ed7;--muted:#6c757d}
+    body{font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;margin:0;background:var(--bg);color:#111}
+    .wrap{max-width:980px;margin:28px auto;padding:20px}
+    header{display:flex;align-items:center;gap:16px}
+    h1{margin:0;font-size:20px}
+    .grid{display:grid;grid-template-columns:1fr 360px;gap:20px;margin-top:18px}
+    .card{background:var(--card);border-radius:10px;padding:16px;box-shadow:0 6px 18px rgba(16,24,40,0.06)}
+    label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+    input,select,button{width:100%;padding:8px 10px;border:1px solid #e6e9ef;border-radius:8px;font-size:14px}
+    button{background:var(--accent);color:white;border:none;cursor:pointer}
+    button.secondary{background:#e9eef8;color:var(--accent);border:1px solid rgba(11,94,215,.12)}
+    .small{font-size:13px}
+    .accounts-list{max-height:220px;overflow:auto;margin-top:8px}
+    .acct{padding:10px;border-radius:8px;border:1px dashed #eef2ff;margin-bottom:8px}
+    pre{background:#0f1724;color:#dbeafe;padding:10px;border-radius:6px;overflow:auto}
+    .tests{margin-top:12px}
+    .pass{color:green}
+    .fail{color:red}
+    footer{margin-top:20px;text-align:center;color:var(--muted);font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='42' height='42'><rect rx='8' width='42' height='42' fill='%230b5ed7'/><text x='50%' y='56%' dominant-baseline='middle' text-anchor='middle' font-family='Arial' font-size='20' fill='white'>B</text></svg>" alt="logo"/>
+      <div>
+        <h1>Simple Bank System — Savings & Current</h1>
+        <div class="small">Supports deposit, withdrawal, transfer, and periodic interest for Savings accounts. Includes unit tests.</div>
+      </div>
+    </header>
+
+    <div class="grid">
+      <section class="card">
+        <h3>Create account</h3>
+        <div style="display:grid;gap:8px;margin-top:8px">
+          <div>
+            <label>Account Holder</label>
+            <input id="holder" placeholder="Alice" />
+          </div>
+          <div>
+            <label>Account Type</label>
+            <select id="type">
+              <option value="savings">Savings</option>
+              <option value="current">Current</option>
+            </select>
+          </div>
+          <div>
+            <label>Initial Balance (₹)</label>
+            <input id="initial" type="number" value="1000" />
+          </div>
+          <div style="display:flex;gap:8px">
+            <button id="create">Create Account</button>
+            <button id="run-tests" class="secondary">Run Unit Tests</button>
+          </div>
+        </div>
+
+        <hr style="margin:14px 0" />
+
+        <h3>Accounts</h3>
+        <div class="accounts-list card" id="accounts"></div>
+
+        <hr style="margin:14px 0" />
+
+        <h3>Operations</h3>
+        <div style="display:grid;gap:8px">
+          <label>From Account (id)</label>
+          <input id="from" placeholder="acct-1" />
+          <label>To Account (id) — for transfer</label>
+          <input id="to" placeholder="acct-2" />
+          <label>Amount (₹)</label>
+          <input id="amount" type="number" value="100" />
+          <div style="display:flex;gap:8px">
+            <button id="deposit">Deposit</button>
+            <button id="withdraw" class="secondary">Withdraw</button>
+            <button id="transferBtn">Transfer</button>
+          </div>
+        </div>
+
+        <hr style="margin:14px 0" />
+        <div>
+          <h3>Interest</h3>
+          <div class="small">Savings accounts accrue interest at configured annual rate — apply manually below to simulate periodic application.</div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <input id="interestRate" type="number" value="4" />
+            <button id="applyInterest" class="secondary">Apply Interest (annual %)</button>
+          </div>
+        </div>
+
+      </section>
+
+      <aside class="card">
+        <h3>Console & Tests</h3>
+        <div id="console" style="font-family:monospace;font-size:13px;min-height:200px;white-space:pre-wrap;word-break:break-word"></div>
+
+        <div class="tests">
+          <h4>Unit test results</h4>
+          <div id="test-results"></div>
+        </div>
+
+        <hr />
+        <h4>Transactions (recent)</h4>
+        <div id="tx-list" style="font-size:13px;max-height:180px;overflow:auto"></div>
+      </aside>
+    </div>
+
+    <footer>Open-source-style simple demo — not for production use.</footer>
+  </div>
+
+  <script>
+    // -------------------- Model classes --------------------
+    class Transaction {
+      constructor(type, amount, fromId = null, toId = null) {
+        this.id = 'tx-' + Math.random().toString(36).slice(2,9);
+        this.type = type; // 'deposit'|'withdraw'|'transfer'|'interest'
+        this.amount = amount;
+        this.timestamp = new Date();
+        this.from = fromId;
+        this.to = toId;
+      }
+    }
+
+    class Account {
+      constructor(holder, initial = 0) {
+        this.id = 'acct-' + Math.random().toString(36).slice(2,9);
+        this.holder = holder;
+        this.balance = Number(initial) || 0;
+        this.transactions = [];
+      }
+
+      deposit(amount) {
+        amount = Number(amount);
+        if (amount <= 0) throw new Error('Deposit must be positive');
+        this.balance += amount;
+        const tx = new Transaction('deposit', amount, null, this.id);
+        this.transactions.push(tx);
+        return tx;
+      }
+
+      withdraw(amount) {
+        amount = Number(amount);
+        if (amount <= 0) throw new Error('Withdraw must be positive');
+        if (this.balance < amount) {
+          throw new Error('Insufficient balance');
+        }
+        this.balance -= amount;
+        const tx = new Transaction('withdraw', amount, this.id, null);
+        this.transactions.push(tx);
+        return tx;
+      }
+    }
+
+    class SavingsAccount extends Account {
+      constructor(holder, initial = 0) {
+        super(holder, initial);
+        this.type = 'savings';
+      }
+
+      // Simple interest application for demonstration — apply annual rate proportionally to one period
+      applyInterest(annualRatePercent) {
+        const rate = Number(annualRatePercent) / 100;
+        if (rate <= 0) return null;
+        // For demo, assume application for 1 year. In real system you'd pro-rate by time.
+        const interest = this.balance * rate;
+        if (interest <= 0) return null;
+        this.balance += interest;
+        const tx = new Transaction('interest', interest, null, this.id);
+        this.transactions.push(tx);
+        return tx;
+      }
+    }
+
+    class CurrentAccount extends Account {
+      constructor(holder, initial = 0) {
+        super(holder, initial);
+        this.type = 'current';
+      }
+    }
+
+    // -------------------- Bank as controller --------------------
+    const Bank = (function(){
+      const accounts = new Map();
+      const txs = [];
+
+      function createAccount(holder, type, initial) {
+        let acct;
+        if (!holder) throw new Error('Holder name required');
+        if (type === 'savings') acct = new SavingsAccount(holder, initial);
+        else acct = new CurrentAccount(holder, initial);
+
+        accounts.set(acct.id, acct);
+        return acct;
+      }
+
+      function getAccount(id){
+        return accounts.get(id) || null;
+      }
+
+      function deposit(id, amount){
+        const acct = getAccount(id);
+        if (!acct) throw new Error('Account not found');
+        const tx = acct.deposit(amount);
+        txs.unshift(tx);
+        return tx;
+      }
+
+      function withdraw(id, amount){
+        const acct = getAccount(id);
+        if (!acct) throw new Error('Account not found');
+        const tx = acct.withdraw(amount);
+        txs.unshift(tx);
+        return tx;
+      }
+
+      function transfer(fromId, toId, amount){
+        const from = getAccount(fromId);
+        const to = getAccount(toId);
+        if (!from || !to) throw new Error('Account not found');
+        amount = Number(amount);
+        if (amount <= 0) throw new Error('Transfer amount must be positive');
+        // withdraw then deposit (atomicity simplified)
+        const w = from.withdraw(amount);
+        const d = to.deposit(amount);
+        const tx = new Transaction('transfer', amount, fromId, toId);
+        txs.unshift(tx);
+        from.transactions.push(tx);
+        to.transactions.push(tx);
+        return tx;
+      }
+
+      function applyInterestToSavings(annualRatePercent){
+        const applied = [];
+        for (const acct of accounts.values()){
+          if (acct instanceof SavingsAccount){
+            const tx = acct.applyInterest(annualRatePercent);
+            if (tx){ txs.unshift(tx); applied.push({acct, tx}); }
+          }
+        }
+        return applied;
+      }
+
+      function listAccounts(){
+        return Array.from(accounts.values());
+      }
+
+      function listTxs(){
+        return txs.slice();
+      }
+
+      return {createAccount, getAccount, deposit, withdraw, transfer, applyInterestToSavings, listAccounts, listTxs};
+    })();
+
+    // -------------------- UI glue --------------------
+    const accountsEl = document.getElementById('accounts');
+    const consoleEl = document.getElementById('console');
+    const txListEl = document.getElementById('tx-list');
+    const testResultsEl = document.getElementById('test-results');
+
+    function log(msg){
+      const time = new Date().toLocaleTimeString();
+      consoleEl.textContent = `[${time}] ${msg}\n` + consoleEl.textContent;
+    }
+
+    function renderAccounts(){
+      accountsEl.innerHTML = '';
+      for (const acct of Bank.listAccounts()){
+        const div = document.createElement('div');
+        div.className = 'acct';
+        div.innerHTML = `<strong>${acct.holder}</strong> <span style='float:right'>${acct.type.toUpperCase()}</span>
+          <div class='small'>id: <code>${acct.id}</code></div>
+          <div class='small'>Balance: ₹<strong>${acct.balance.toFixed(2)}</strong></div>`;
+        accountsEl.appendChild(div);
+      }
+    }
+
+    function renderTxs(){
+      txListEl.innerHTML = '';
+      for (const tx of Bank.listTxs().slice(0,20)){
+        const d = document.createElement('div');
+        d.style.padding='6px 0';
+        d.innerHTML = `<div class='small'>${tx.timestamp.toLocaleString()} — <strong>${tx.type}</strong> ₹${tx.amount.toFixed(2)}</div>
+                       <div class='small'>from: ${tx.from||'-'} to: ${tx.to||'-'} id:${tx.id}</div>`;
+        txListEl.appendChild(d);
+      }
+    }
+
+    document.getElementById('create').addEventListener('click', ()=>{
+      try{
+        const holder = document.getElementById('holder').value.trim() || 'Unknown';
+        const type = document.getElementById('type').value;
+        const initial = Number(document.getElementById('initial').value) || 0;
+        const acct = Bank.createAccount(holder, type, initial);
+        log(`Account created: ${acct.id} (${acct.holder}) type=${acct.type} balance=₹${acct.balance.toFixed(2)}`);
+        renderAccounts(); renderTxs();
+      }catch(e){ log('Error: '+e.message); }
+    });
+
+    document.getElementById('deposit').addEventListener('click', ()=>{
+      try{
+        const id = document.getElementById('from').value.trim();
+        const amt = Number(document.getElementById('amount').value) || 0;
+        const tx = Bank.deposit(id, amt);
+        log(`Deposit ₹${amt.toFixed(2)} to ${id}`);
+        renderAccounts(); renderTxs();
+      }catch(e){ log('Error: '+e.message); }
+    });
+
+    document.getElementById('withdraw').addEventListener('click', ()=>{
+      try{
+        const id = document.getElementById('from').value.trim();
+        const amt = Number(document.getElementById('amount').value) || 0;
+        const tx = Bank.withdraw(id, amt);
+        log(`Withdraw ₹${amt.toFixed(2)} from ${id}`);
+        renderAccounts(); renderTxs();
+      }catch(e){ log('Error: '+e.message); }
+    });
+
+    document.getElementById('transferBtn').addEventListener('click', ()=>{
+      try{
+        const from = document.getElementById('from').value.trim();
+        const to = document.getElementById('to').value.trim();
+        const amt = Number(document.getElementById('amount').value) || 0;
+        const tx = Bank.transfer(from, to, amt);
+        log(`Transfer ₹${amt.toFixed(2)} from ${from} to ${to}`);
+        renderAccounts(); renderTxs();
+      }catch(e){ log('Error: '+e.message); }
+    });
+
+    document.getElementById('applyInterest').addEventListener('click', ()=>{
+      try{
+        const rate = Number(document.getElementById('interestRate').value) || 0;
+        const applied = Bank.applyInterestToSavings(rate);
+        log(`Applied interest ${rate}% to ${applied.length} savings account(s)`);
+        renderAccounts(); renderTxs();
+      }catch(e){ log('Error: '+e.message); }
+    });
+
+    // -------------------- Simple unit test runner --------------------
+    function assert(condition, message){
+      if (!condition) throw new Error(message || 'Assertion failed');
+    }
+
+    function runTests(){
+      testResultsEl.innerHTML = '';
+      const results = [];
+
+      // Reset environment — create fresh accounts map by reloading the page-level Bank closure
+      // For simplicity in this demo we'll create a few accounts and operate on them.
+      try{
+        // Create two accounts: savings and current
+        const s = Bank.createAccount('Test Saver', 'savings', 500);
+        const c = Bank.createAccount('Test Current', 'current', 200);
+
+        // 1) Withdrawal fails if balance insufficient
+        let test1Passed = false;
+        try{
+          try{ Bank.withdraw(c.id, 500); }
+          catch(e){ /* expected */ }
+          // ensure balance unchanged
+          assert(Bank.getAccount(c.id).balance === 200, 'Balance should remain 200 after failed withdraw');
+          test1Passed = true;
+        }catch(e){ test1Passed = false; }
+        results.push({name:'Withdrawal fails if balance is insufficient', ok:test1Passed});
+
+        // 2) Transfer correctly updates both accounts
+        let test2Passed = false;
+        try{
+          const fromBefore = Bank.getAccount(s.id).balance;
+          const toBefore = Bank.getAccount(c.id).balance;
+          Bank.transfer(s.id, c.id, 100);
+          const fromAfter = Bank.getAccount(s.id).balance;
+          const toAfter = Bank.getAccount(c.id).balance;
+          assert(fromAfter === fromBefore - 100, 'From account not debited correctly');
+          assert(toAfter === toBefore + 100, 'To account not credited correctly');
+          test2Passed = true;
+        }catch(e){ test2Passed = false; }
+        results.push({name:'Transfer correctly updates both accounts', ok:test2Passed});
+
+        // 3) Interest is applied only to Savings accounts
+        let test3Passed = false;
+        try{
+          const sBalBefore = Bank.getAccount(s.id).balance;
+          const cBalBefore = Bank.getAccount(c.id).balance;
+          Bank.applyInterestToSavings(10); // 10% annual for demo
+          const sBalAfter = Bank.getAccount(s.id).balance;
+          const cBalAfter = Bank.getAccount(c.id).balance;
+          assert(sBalAfter > sBalBefore, 'Savings balance should increase after interest');
+          assert(cBalAfter === cBalBefore, 'Current account should not receive interest');
+          test3Passed = true;
+        }catch(e){ test3Passed = false; }
+        results.push({name:'Interest applied only to Savings accounts', ok:test3Passed});
+
+      }catch(e){ log('Test runner error: '+e.message); }
+
+      // display
+      for (const r of results){
+        const div = document.createElement('div');
+        div.innerHTML = `<strong>${r.ok ? '<span class="pass">PASS</span>' : '<span class="fail">FAIL</span>'}</strong> — ${r.name}`;
+        testResultsEl.appendChild(div);
+      }
+
+      log('Unit tests completed');
+      renderAccounts(); renderTxs();
+    }
+
+    document.getElementById('run-tests').addEventListener('click', runTests);
+
+    // Seed with two demo accounts to start
+    (function seed(){
+      const a = Bank.createAccount('Alice', 'savings', 1500);
+      const b = Bank.createAccount('Bob', 'current', 800);
+      log(`Seeded accounts: ${a.id} (Alice), ${b.id} (Bob)`);
+      renderAccounts(); renderTxs();
+    })();
+  </script>
+</body>
+</html>
